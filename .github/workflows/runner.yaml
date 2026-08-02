@@ -37,6 +37,7 @@ jobs:
         run: |
           upterm host \
             --server wss://upterm.qincai.xyz \
+            --private-key ~/.upterm/id_ed25519 \
             --accept \
             --github-user QinCai-rui \
             --skip-host-key-check
