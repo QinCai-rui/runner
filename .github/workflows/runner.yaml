@@ -25,7 +25,7 @@ jobs:
       - name: Check
         run: |
           uname -m
-          upterm --version
+          upterm version
 
       - name: Start Upterm
         run: |
