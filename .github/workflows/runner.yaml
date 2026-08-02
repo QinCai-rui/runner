@@ -32,4 +32,5 @@ jobs:
           upterm host \
             --server wss://upterm.qincai.xyz \
             --accept \
-            --github-user QinCai-rui
+            --github-user QinCai-rui \
+            --skip-host-key-check
