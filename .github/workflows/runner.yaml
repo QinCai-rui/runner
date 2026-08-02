@@ -10,14 +10,24 @@ jobs:
     steps:
       - name: Install Upterm
         run: |
-          curl -sSfL https://raw.githubusercontent.com/owenthereal/upterm/master/install.sh | bash
+          sudo apt update
+          sudo apt install -y curl jq
 
-      - name: Verify architecture
+          URL=$(curl -s https://api.github.com/repos/owenthereal/upterm/releases/latest \
+            | jq -r '.assets[].browser_download_url' \
+            | grep 'upterm_linux_arm64.deb')
+
+          echo "Downloading: $URL"
+
+          curl -L "$URL" -o upterm.deb
+          sudo apt install -y ./upterm.deb
+
+      - name: Check
         run: |
           uname -m
           upterm --version
 
-      - name: Start Upterm session
+      - name: Start Upterm
         run: |
           upterm host \
             --server wss://upterm.qincai.xyz \
