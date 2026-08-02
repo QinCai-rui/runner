@@ -1,0 +1,14 @@
+name: SSHX ARM Shell
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sshx:
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Start SSHX
+        run: |
+          curl -sSf https://sshx.io/get | sh -s run &
+          sleep 21600
