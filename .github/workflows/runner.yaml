@@ -1,18 +1,38 @@
-name: Upterm ARM Shell
+name: Interactive Upterm Shell with Tailscale SSH
 
 on:
   workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Runner architecture'
+        required: true
+        default: 'arm'
+        type: choice
+        options:
+          - arm
+          - x86
 
 jobs:
-  upterm:
-    runs-on: ubuntu-24.04-arm
+  persistant-runner:
+    runs-on: ${{ inputs.arch == 'arm' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
 
     steps:
-      - name: Install Upterm
+      - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y curl jq
 
+      - name: Install and start Tailscale
+        env:
+          TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sh
+          sudo tailscale up --auth-key="$TS_AUTHKEY"
+          sudo tailscale set --ssh
+          echo "My Tailscale IP is: $(tailscale ip | sed -n 1p)"
+
+      - name: Install Upterm
+        run: |
           URL=$(curl -s https://api.github.com/repos/owenthereal/upterm/releases/latest \
             | jq -r '.assets[].browser_download_url' \
             | grep 'upterm_linux_arm64.deb')
@@ -26,6 +46,7 @@ jobs:
         run: |
           uname -m
           upterm version
+          tailscale status || true
 
       - name: Generate Upterm key
         run: |
