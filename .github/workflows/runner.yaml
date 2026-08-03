@@ -29,7 +29,6 @@ jobs:
           curl -fsSL https://tailscale.com/install.sh | sh
           sudo tailscale up --auth-key="$TS_AUTHKEY"
           sudo tailscale set --ssh
-          echo "My Tailscale IP is: $(tailscale ip | sed -n 1p)"
 
       - name: Install Upterm
         run: |
@@ -46,7 +45,7 @@ jobs:
         run: |
           uname -m
           upterm version
-          tailscale status || true
+          echo "My Tailscale IP is: $(tailscale ip | sed -n 1p)"
 
       - name: Generate Upterm key
         run: |
