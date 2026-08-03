@@ -70,7 +70,6 @@ jobs:
           repository: QinCai-rui/armbian-build
           branch: a733-mainline
           path: armbian-build
-          token: ${{ secrets.GH_TOKEN }}
     
       - name: Start Upterm
         run: |
