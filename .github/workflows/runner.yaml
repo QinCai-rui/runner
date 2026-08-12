@@ -71,11 +71,11 @@ jobs:
           ref: a733-mainline
           path: armbian-build
     
-      - name: Start Upterm
-        run: |
-          upterm host \
-            --server wss://upterm.qincai.xyz \
-            --private-key ~/.upterm/id_ed25519 \
-            --accept \
-            --github-user QinCai-rui \
-            --skip-host-key-check
+#      - name: Start Upterm
+#        run: |
+#         upterm host \
+#            --server wss://upterm.qincai.xyz \
+#            --private-key ~/.upterm/id_ed25519 \
+#            --accept \
+#            --github-user QinCai-rui \
+#            --skip-host-key-check
