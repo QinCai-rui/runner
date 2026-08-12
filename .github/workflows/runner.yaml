@@ -68,7 +68,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: QinCai-rui/armbian-build
-          branch: a733-mainline
+          ref: a733-mainline
           path: armbian-build
     
       - name: Start Upterm
