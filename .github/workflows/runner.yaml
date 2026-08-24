@@ -3,14 +3,17 @@ name: Interactive Upterm Shell with Tailscale SSH
 on:
   workflow_dispatch:
     inputs:
-      arch:
-        description: 'Runner architecture'
+      runner:
+        description: 'Runner'
         required: true
-        default: 'arm'
+        default: 'ubuntu'
         type: choice
         options:
-          - arm
-          - x86
+          - ubuntu
+          - windows
+          - macos-arm
+          - macos-x64
+
       clone_armbian:
         description: 'Clone QinCai-rui/armbian-build'
         required: true
@@ -18,46 +21,147 @@ on:
         type: boolean
 
 jobs:
-  persistant-runner:
-    runs-on: ${{ inputs.arch == 'arm' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+  persistent-runner:
+    runs-on: >-
+      ${{
+        inputs.runner == 'windows' && 'windows-latest' ||
+        inputs.runner == 'macos-arm' && 'macos-26' ||
+        inputs.runner == 'macos-x64' && 'macos-26-intel' ||
+        'ubuntu-latest'
+      }}
 
     steps:
-      - name: Install dependencies
+      - name: System information
+        shell: bash
         run: |
-          sudo apt update
-          sudo apt install -y curl jq
+          echo "=== System ==="
+          uname -a || true
+          echo
+          echo "=== Architecture ==="
+          uname -m || true
+          echo
+          echo "=== CPU count ==="
+          if command -v sysctl >/dev/null 2>&1; then
+            sysctl -n hw.ncpu
+          elif command -v nproc >/dev/null 2>&1; then
+            nproc
+          else
+            echo "unknown"
+          fi
+          echo
+          echo "=== Load ==="
+          uptime || true
+          echo
+          echo "=== Top CPU processes ==="
+          ps -Ao pid,%cpu,%mem,comm | sort -k2 -nr | head -20 || true
+
+      - name: Install dependencies
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt update
+            sudo apt install -y curl jq
+          else
+            brew install curl jq
+          fi
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install jq -y
 
       - name: Install and start Tailscale
         env:
           TS_AUTHKEY: ${{ secrets.TS_AUTH_KEY }}
+        shell: bash
         run: |
           if [ -z "$TS_AUTHKEY" ]; then
             echo "ERROR: secrets.TS_AUTH_KEY is empty or not set"
             exit 1
           fi
 
-          curl -fsSL https://tailscale.com/install.sh | sh
-          sudo tailscale up --auth-key="$TS_AUTHKEY"
-          sudo tailscale set --ssh
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            curl -fsSL https://tailscale.com/install.sh | sh
+            sudo tailscale up --auth-key="$TS_AUTHKEY"
+            sudo tailscale set --ssh
+
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            brew install --quiet tailscale
+            sudo tailscaled install-system-daemon
+            sudo tailscale up --auth-key="$TS_AUTHKEY"
+            sudo tailscale set --ssh
+
+          else
+            echo "Windows Tailscale setup not implemented in this workflow"
+            exit 1
+          fi
 
       - name: Install Upterm
+        shell: bash
         run: |
-          URL=$(curl -s https://api.github.com/repos/owenthereal/upterm/releases/latest \
-            | jq -r '.assets[].browser_download_url' \
-            | grep 'upterm_linux_arm64.deb')
+          set -e
+
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            case "$(uname -m)" in
+              x86_64)  ARCH=amd64 ;;
+              aarch64) ARCH=arm64 ;;
+              *) echo "Unsupported architecture"; exit 1 ;;
+            esac
+            OS=linux
+
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            case "$(uname -m)" in
+              x86_64) ARCH=amd64 ;;
+              arm64)  ARCH=arm64 ;;
+              *) echo "Unsupported architecture"; exit 1 ;;
+            esac
+            OS=darwin
+
+          else
+            echo "Windows Upterm setup not implemented yet"
+            exit 1
+          fi
+
+          URL=$(curl -fsSL https://api.github.com/repos/owenthereal/upterm/releases/latest \
+            | jq -r --arg asset "upterm_${OS}_${ARCH}.tar.gz" \
+              '.assets[] | select(.name == $asset) | .browser_download_url')
 
           echo "Downloading: $URL"
 
-          curl -L "$URL" -o upterm.deb
-          sudo apt install -y ./upterm.deb
+          curl -L "$URL" -o upterm.tar.gz
+          tar -xzf upterm.tar.gz
+
+          sudo install upterm /usr/local/bin/upterm
 
       - name: Check
+        shell: bash
         run: |
-          uname -m
+          echo "=== Runner ==="
+          echo "OS: $RUNNER_OS"
+          echo "Architecture: $(uname -m)"
+          echo
+          echo "=== CPU ==="
+          if command -v sysctl >/dev/null 2>&1; then
+            sysctl -n hw.ncpu
+          else
+            nproc
+          fi
+          echo
+          echo "=== Load ==="
+          uptime || true
+          echo
+          echo "=== CPU hogs ==="
+          ps -Ao pid,%cpu,%mem,comm | sort -k2 -nr | head -20 || true
+          echo
           upterm version
-          echo "My Tailscale IP is: $(tailscale ip | sed -n 1p)"
+          echo
+          echo "My Tailscale IP is:"
+          tailscale ip | sed -n 1p
 
       - name: Generate Upterm key
+        shell: bash
         run: |
           mkdir -p ~/.upterm
           ssh-keygen -t ed25519 -N "" -f ~/.upterm/id_ed25519
@@ -70,10 +174,11 @@ jobs:
           repository: QinCai-rui/armbian-build
           ref: a733-mainline
           path: armbian-build
-    
+
 #      - name: Start Upterm
+#        shell: bash
 #        run: |
-#         upterm host \
+#          upterm host \
 #            --server wss://upterm.qincai.xyz \
 #            --private-key ~/.upterm/id_ed25519 \
 #            --accept \
