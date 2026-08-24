@@ -21,6 +21,12 @@ on:
         default: true
         type: boolean
 
+      install_upterm:
+        description: "Install Upterm"
+        required: true
+        default: false
+        type: boolean
+
 jobs:
   persistent-runner:
     runs-on: >-
@@ -234,7 +240,7 @@ jobs:
       # ------------------------------------------------------------
 
       - name: Install Upterm
-        if: runner.os != 'Windows'
+        if: ${{ inputs.install_upterm && runner.os != 'Windows' }}
         shell: bash
         run: |
           set -e
