@@ -146,6 +146,7 @@ jobs:
           fi
 
           sudo tailscale up --auth-key="$TS_AUTHKEY"
+          sudo tailscale set --ssh
 
           echo
           echo "Tailscale IP:"
