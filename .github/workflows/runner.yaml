@@ -1,21 +1,22 @@
-name: Interactive Upterm Shell with Tailscale SSH
+name: Interactive Tailscale SSH Runner
 
 on:
   workflow_dispatch:
     inputs:
       runner:
-        description: 'Runner'
+        description: "Runner"
         required: true
-        default: 'ubuntu'
+        default: "ubuntu-x64"
         type: choice
         options:
-          - ubuntu
-          - windows
+          - ubuntu-x64
+          - ubuntu-arm
+          - windows-x64
           - macos-arm
           - macos-x64
 
       clone_armbian:
-        description: 'Clone QinCai-rui/armbian-build'
+        description: "Clone QinCai-rui/armbian-build"
         required: true
         default: true
         type: boolean
@@ -24,58 +25,98 @@ jobs:
   persistent-runner:
     runs-on: >-
       ${{
-        inputs.runner == 'windows' && 'windows-latest' ||
+        inputs.runner == 'ubuntu-arm' && 'ubuntu-24.04-arm' ||
+        inputs.runner == 'windows-x64' && 'windows-latest' ||
         inputs.runner == 'macos-arm' && 'macos-26' ||
         inputs.runner == 'macos-x64' && 'macos-26-intel' ||
         'ubuntu-latest'
       }}
 
     steps:
+      # ------------------------------------------------------------
+      # Basic system info
+      # ------------------------------------------------------------
+
       - name: System information
         shell: bash
         run: |
-          echo "=== System ==="
+          echo "========================================"
+          echo "Runner information"
+          echo "========================================"
+
+          echo "RUNNER_OS=$RUNNER_OS"
+          echo "RUNNER_ARCH=$RUNNER_ARCH"
+
+          echo
+          echo "=== uname ==="
           uname -a || true
+
           echo
           echo "=== Architecture ==="
           uname -m || true
+
           echo
           echo "=== CPU count ==="
           if command -v sysctl >/dev/null 2>&1; then
-            sysctl -n hw.ncpu
+            sysctl -n hw.ncpu || true
           elif command -v nproc >/dev/null 2>&1; then
-            nproc
-          else
-            echo "unknown"
+            nproc || true
           fi
+
           echo
           echo "=== Load ==="
           uptime || true
+
           echo
           echo "=== Top CPU processes ==="
-          ps -Ao pid,%cpu,%mem,comm | sort -k2 -nr | head -20 || true
+          ps -Ao pid,%cpu,%mem,comm 2>/dev/null \
+            | sort -k2 -nr \
+            | head -20 || true
 
-      - name: Install dependencies
-        if: runner.os != 'Windows'
+          echo
+          echo "=== PerfPowerServices ==="
+          ps aux 2>/dev/null \
+            | grep '[P]erfPowerServices' || true
+
+      # ------------------------------------------------------------
+      # Linux depps
+      # ------------------------------------------------------------
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            sudo apt update
-            sudo apt install -y curl jq
-          else
-            brew install curl jq
-          fi
+          sudo apt update
+          sudo apt install -y curl jq
 
-      - name: Install dependencies (Windows)
+      # ------------------------------------------------------------
+      # macOS deps
+      # ------------------------------------------------------------
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew install curl jq
+
+      # ------------------------------------------------------------
+      # Windows deps
+      # ------------------------------------------------------------
+
+      - name: Install Windows dependencies
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           choco install jq -y
 
-      - name: Install and start Tailscale
+      # ------------------------------------------------------------ 
+      # Tailscale 
+      # ------------------------------------------------------------
+
+      - name: Install and connect Tailscale
+        shell: bash
         env:
           TS_AUTHKEY: ${{ secrets.TS_AUTH_KEY }}
-        shell: bash
         run: |
           if [ -z "$TS_AUTHKEY" ]; then
             echo "ERROR: secrets.TS_AUTH_KEY is empty or not set"
@@ -84,88 +125,257 @@ jobs:
 
           if [ "$RUNNER_OS" = "Linux" ]; then
             curl -fsSL https://tailscale.com/install.sh | sh
-            sudo tailscale up --auth-key="$TS_AUTHKEY"
-            sudo tailscale set --ssh
 
           elif [ "$RUNNER_OS" = "macOS" ]; then
             brew install --quiet tailscale
+
             sudo tailscaled install-system-daemon
-            sudo tailscale up --auth-key="$TS_AUTHKEY"
-            sudo tailscale set --ssh
+
+          elif [ "$RUNNER_OS" = "Windows" ]; then
+            winget install --id Tailscale.Tailscale --exact --silent
 
           else
-            echo "Windows Tailscale setup not implemented in this workflow"
+            echo "Unsupported OS: $RUNNER_OS"
             exit 1
           fi
 
+          sudo tailscale up --auth-key="$TS_AUTHKEY"
+
+          echo
+          echo "Tailscale IP:"
+          tailscale ip
+
+      # ------------------------------------------------------------
+      # Tailscale information
+      # ------------------------------------------------------------
+
+      - name: Show Tailscale information
+        shell: bash
+        run: |
+          echo "=== Tailscale ==="
+
+          if command -v tailscale >/dev/null 2>&1; then
+            tailscale status || true
+            echo
+            echo "Tailscale IP:"
+            tailscale ip || true
+          else
+            echo "tailscale command not found"
+          fi
+
+      # ------------------------------------------------------------
+      # macOS SSH
+      #
+      # Enable the normal macOS SSH server
+      # ------------------------------------------------------------
+
+      - name: Enable macOS SSH
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          echo "Enabling macOS SSH..."
+
+          sudo launchctl load -w /System/Library/LaunchDaemons/ssh.plist 2>/dev/null || true
+
+          echo
+          echo "SSH status:"
+          sudo launchctl list | grep ssh || true
+
+          echo
+          echo "Tailscale IP:"
+          tailscale ip | head -1
+
+          echo
+          echo "Current user:"
+          whoami
+
+      # ------------------------------------------------------------
+      # Linux SSH
+      # ------------------------------------------------------------
+
+      - name: Enable Linux SSH
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo systemctl enable --now ssh 2>/dev/null || \
+          sudo systemctl enable --now sshd 2>/dev/null || true
+
+          echo
+          echo "Tailscale IP:"
+          tailscale ip | head -1
+
+          echo
+          echo "Current user:"
+          whoami
+
+      # ------------------------------------------------------------
+      # Windows OpenSSH
+      # ------------------------------------------------------------
+
+      - name: Enable Windows SSH
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+
+          Start-Service sshd
+          Set-Service -Name sshd -StartupType Automatic
+
+          Write-Host ""
+          Write-Host "Tailscale IP:"
+          tailscale ip
+
+          Write-Host ""
+          Write-Host "Current user:"
+          whoami
+
+      # ------------------------------------------------------------
+      # Install Upterm
+      # ------------------------------------------------------------
+
       - name: Install Upterm
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           set -e
 
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            case "$(uname -m)" in
-              x86_64)  ARCH=amd64 ;;
-              aarch64) ARCH=arm64 ;;
-              *) echo "Unsupported architecture"; exit 1 ;;
-            esac
-            OS=linux
+          OS=""
 
-          elif [ "$RUNNER_OS" = "macOS" ]; then
-            case "$(uname -m)" in
-              x86_64) ARCH=amd64 ;;
-              arm64)  ARCH=arm64 ;;
-              *) echo "Unsupported architecture"; exit 1 ;;
-            esac
-            OS=darwin
+          case "$RUNNER_OS" in
+            Linux)
+              OS="linux"
+              ;;
+            macOS)
+              OS="darwin"
+              ;;
+            *)
+              echo "Unsupported OS"
+              exit 1
+              ;;
+          esac
 
-          else
-            echo "Windows Upterm setup not implemented yet"
+          case "$(uname -m)" in
+            x86_64)
+              ARCH="amd64"
+              ;;
+            aarch64|arm64)
+              ARCH="arm64"
+              ;;
+            *)
+              echo "Unsupported architecture: $(uname -m)"
+              exit 1
+              ;;
+          esac
+
+          echo "OS: $OS"
+          echo "Architecture: $ARCH"
+
+          echo
+          echo "Fetching latest Upterm release..."
+
+          URL="$(
+            curl -fsSL \
+              https://api.github.com/repos/owenthereal/upterm/releases/latest |
+            jq -r \
+              --arg pattern "upterm_${OS}_${ARCH}.tar.gz" \
+              '.assets[] | select(.name == $pattern) | .browser_download_url'
+          )"
+
+          if [ -z "$URL" ] || [ "$URL" = "null" ]; then
+            echo "Could not find Upterm release"
             exit 1
           fi
 
-          URL=$(curl -fsSL https://api.github.com/repos/owenthereal/upterm/releases/latest \
-            | jq -r --arg asset "upterm_${OS}_${ARCH}.tar.gz" \
-              '.assets[] | select(.name == $asset) | .browser_download_url')
-
           echo "Downloading: $URL"
 
-          curl -L "$URL" -o upterm.tar.gz
+          curl -fL "$URL" -o upterm.tar.gz
+
           tar -xzf upterm.tar.gz
 
           sudo install upterm /usr/local/bin/upterm
 
-      - name: Check
-        shell: bash
-        run: |
-          echo "=== Runner ==="
-          echo "OS: $RUNNER_OS"
-          echo "Architecture: $(uname -m)"
-          echo
-          echo "=== CPU ==="
-          if command -v sysctl >/dev/null 2>&1; then
-            sysctl -n hw.ncpu
-          else
-            nproc
-          fi
-          echo
-          echo "=== Load ==="
-          uptime || true
-          echo
-          echo "=== CPU hogs ==="
-          ps -Ao pid,%cpu,%mem,comm | sort -k2 -nr | head -20 || true
           echo
           upterm version
-          echo
-          echo "My Tailscale IP is:"
-          tailscale ip | sed -n 1p
+
+      # ------------------------------------------------------------
+      # Generate Upterm key
+      # ------------------------------------------------------------
 
       - name: Generate Upterm key
         shell: bash
         run: |
           mkdir -p ~/.upterm
-          ssh-keygen -t ed25519 -N "" -f ~/.upterm/id_ed25519
+
+          ssh-keygen \
+            -t ed25519 \
+            -N "" \
+            -f ~/.upterm/id_ed25519
+
+          echo
+          echo "Upterm public key:"
           cat ~/.upterm/id_ed25519.pub
+
+      # ------------------------------------------------------------
+      # Detailed diagnostics
+      # ------------------------------------------------------------
+
+      - name: CPU diagnostics
+        shell: bash
+        run: |
+          echo
+          echo "========================================"
+          echo "CPU DIAGNOSTICS"
+          echo "========================================"
+
+          echo
+          echo "=== OS ==="
+          echo "RUNNER_OS=$RUNNER_OS"
+          echo "RUNNER_ARCH=$RUNNER_ARCH"
+
+          echo
+          echo "=== Kernel ==="
+          uname -a || true
+
+          echo
+          echo "=== CPU architecture ==="
+          uname -m || true
+
+          echo
+          echo "=== CPU count ==="
+          if command -v sysctl >/dev/null 2>&1; then
+            sysctl -n hw.ncpu || true
+            sysctl -n hw.logicalcpu 2>/dev/null || true
+            sysctl -n hw.physicalcpu 2>/dev/null || true
+          elif command -v nproc >/dev/null 2>&1; then
+            nproc || true
+          fi
+
+          echo
+          echo "=== Load ==="
+          uptime || true
+
+          echo
+          echo "=== Top CPU processes ==="
+          ps -Ao pid,%cpu,%mem,comm 2>/dev/null \
+            | sort -k2 -nr \
+            | head -30 || true
+
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            echo
+            echo "=== PerfPowerServices ==="
+            ps aux | grep '[P]erfPowerServices' || true
+
+            echo
+            echo "=== Power-related processes ==="
+            ps aux \
+              | grep -Ei 'power|thermal|smc|perf' \
+              | grep -v grep \
+              || true
+          fi
+
+      # ------------------------------------------------------------
+      # Checkout Armbian
+      # ------------------------------------------------------------
 
       - name: Checkout Armbian build
         if: ${{ inputs.clone_armbian }}
@@ -175,12 +385,37 @@ jobs:
           ref: a733-mainline
           path: armbian-build
 
-#      - name: Start Upterm
-#        shell: bash
-#        run: |
-#          upterm host \
-#            --server wss://upterm.qincai.xyz \
-#            --private-key ~/.upterm/id_ed25519 \
-#            --accept \
-#            --github-user QinCai-rui \
-#            --skip-host-key-check
+      # ------------------------------------------------------------
+      # Keep runner alive
+      # ------------------------------------------------------------
+
+      - name: Keep runner alive
+        shell: bash
+        run: |
+          echo
+          echo "========================================"
+          echo "RUNNER READY"
+          echo "========================================"
+
+          echo
+          echo "OS: $RUNNER_OS"
+          echo "Architecture: $RUNNER_ARCH"
+
+          echo
+          echo "Tailscale IP:"
+          tailscale ip | head -1
+
+          echo
+          echo "Username:"
+          whoami
+
+          echo
+          echo "SSH:"
+          echo "ssh $(whoami)@$(tailscale ip | head -1)"
+
+          echo
+          echo "Runner will remain alive until the GitHub job timeout."
+
+          while true; do
+            sleep 3600
+          done
