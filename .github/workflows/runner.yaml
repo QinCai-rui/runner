@@ -18,7 +18,7 @@ on:
       clone_armbian:
         description: "Clone QinCai-rui/armbian-build"
         required: true
-        default: true
+        default: false
         type: boolean
 
       install_upterm:
@@ -147,15 +147,30 @@ jobs:
           elif [ "$RUNNER_OS" = "Windows" ]; then
             echo "Installing Tailscale..."
             choco install tailscale -y --no-progress
-
+          
+            # Chocolatey/MSI changes PATH, but the current Git Bash process
+            # does not automatically inherit the updated PATH.
+            TAILSCALE_EXE="$(find /c/Program\ Files/Tailscale /c/Program\ Files\ \(x86\)/Tailscale \
+              -type f -iname 'tailscale.exe' 2>/dev/null | head -1)"
+          
+            if [ -z "$TAILSCALE_EXE" ]; then
+              echo "ERROR: tailscale.exe not found"
+              exit 1
+            fi
+          
+            TAILSCALE_DIR="$(dirname "$TAILSCALE_EXE")"
+            export PATH="$TAILSCALE_DIR:$PATH"
+          
+            echo "Tailscale executable: $TAILSCALE_EXE"
+          
             echo
             echo "Tailscale version:"
             tailscale version
-
+          
             echo
             echo "Connecting Tailscale..."
             tailscale up --auth-key="$TS_AUTHKEY"
-
+          
             echo
             echo "Enabling Tailscale SSH..."
             tailscale set --ssh
