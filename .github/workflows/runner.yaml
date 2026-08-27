@@ -124,6 +124,8 @@ jobs:
         env:
           TS_AUTHKEY: ${{ secrets.TS_AUTH_KEY }}
         run: |
+          set -e
+
           if [ -z "$TS_AUTHKEY" ]; then
             echo "ERROR: secrets.TS_AUTH_KEY is empty or not set"
             exit 1
@@ -132,21 +134,36 @@ jobs:
           if [ "$RUNNER_OS" = "Linux" ]; then
             curl -fsSL https://tailscale.com/install.sh | sh
 
+            sudo tailscale up --auth-key="$TS_AUTHKEY"
+            sudo tailscale set --ssh
+
           elif [ "$RUNNER_OS" = "macOS" ]; then
             brew install --quiet tailscale
 
             sudo tailscaled install-system-daemon
+            sudo tailscale up --auth-key="$TS_AUTHKEY"
+            sudo tailscale set --ssh
 
           elif [ "$RUNNER_OS" = "Windows" ]; then
-            winget install --id Tailscale.Tailscale --exact --silent
+            echo "Installing Tailscale..."
+            choco install tailscale -y --no-progress
+
+            echo
+            echo "Tailscale version:"
+            tailscale version
+
+            echo
+            echo "Connecting Tailscale..."
+            tailscale up --auth-key="$TS_AUTHKEY"
+
+            echo
+            echo "Enabling Tailscale SSH..."
+            tailscale set --ssh
 
           else
             echo "Unsupported OS: $RUNNER_OS"
             exit 1
           fi
-
-          sudo tailscale up --auth-key="$TS_AUTHKEY"
-          sudo tailscale set --ssh
 
           echo
           echo "Tailscale IP:"
