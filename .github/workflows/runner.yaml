@@ -145,35 +145,17 @@ jobs:
             sudo tailscale set --ssh
 
           elif [ "$RUNNER_OS" = "Windows" ]; then
-            echo "Installing Tailscale..."
             choco install tailscale -y --no-progress
           
-            # Chocolatey/MSI changes PATH, but the current Git Bash process
-            # does not automatically inherit the updated PATH.
-            TAILSCALE_EXE="$(find /c/Program\ Files/Tailscale /c/Program\ Files\ \(x86\)/Tailscale \
-              -type f -iname 'tailscale.exe' 2>/dev/null | head -1)"
+            exec /usr/bin/bash -lc '
+              tailscale version
+              tailscale up --auth-key="$TS_AUTHKEY"
+              tailscale set --ssh
           
-            if [ -z "$TAILSCALE_EXE" ]; then
-              echo "ERROR: tailscale.exe not found"
-              exit 1
-            fi
-          
-            TAILSCALE_DIR="$(dirname "$TAILSCALE_EXE")"
-            export PATH="$TAILSCALE_DIR:$PATH"
-          
-            echo "Tailscale executable: $TAILSCALE_EXE"
-          
-            echo
-            echo "Tailscale version:"
-            tailscale version
-          
-            echo
-            echo "Connecting Tailscale..."
-            tailscale up --auth-key="$TS_AUTHKEY"
-          
-            echo
-            echo "Enabling Tailscale SSH..."
-            tailscale set --ssh
+              echo
+              echo "Tailscale IP:"
+              tailscale ip
+            '
 
           else
             echo "Unsupported OS: $RUNNER_OS"
