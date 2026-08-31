@@ -254,17 +254,13 @@ jobs:
       # Add GitHub SSH public keys
       # ------------------------------------------------------------
 
-      - name: Add GitHub SSH public keys
+      - name: Add GitHub SSH public keys (Linux/macOS)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           set -e
 
           KEYS_URL="https://github.com/QinCai-rui.keys"
-          SSH_DIR="$HOME/.ssh"
-          AUTH_KEYS="$SSH_DIR/authorized_keys"
-
-          mkdir -p "$SSH_DIR"
-          chmod 700 "$SSH_DIR"
 
           echo "Fetching SSH public keys from $KEYS_URL ..."
 
@@ -275,19 +271,66 @@ jobs:
             exit 1
           fi
 
+          SSH_DIR="$HOME/.ssh"
+          AUTH_KEYS="$SSH_DIR/authorized_keys"
+          mkdir -p "$SSH_DIR"
+          chmod 700 "$SSH_DIR"
           echo "$KEYS" >> "$AUTH_KEYS"
           chmod 600 "$AUTH_KEYS"
-
           echo
           echo "Added keys:"
           echo "$KEYS" | wc -l | xargs -I {} echo "{} key(s) added to $AUTH_KEYS"
+
+      - name: Add GitHub SSH public keys (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $KeysUrl = "https://github.com/QinCai-rui.keys"
+          Write-Host "Fetching SSH public keys from $KeysUrl ..."
+
+          $Keys = (Invoke-WebRequest -UseBasicParsing -Uri $KeysUrl).Content.Trim()
+
+          if (-not $Keys) {
+            Write-Host "No keys found for user QinCai-rui"
+            exit 1
+          }
+
+          # 1) Regular user authorized_keys (%USERPROFILE%\.ssh\authorized_keys)
+          $sshDir = Join-Path $env:USERPROFILE ".ssh"
+          $authKeys = Join-Path $sshDir "authorized_keys"
+          New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
+          $Keys | Out-File -FilePath $authKeys -Encoding utf8 -Append
+          Write-Host "Added to $authKeys"
+
+          # Fix ACLs for regular authorized_keys (only user + SYSTEM)
+          icacls $sshDir /inheritance:r  | Out-Null
+          icacls $sshDir /grant "${env:USERNAME}:F" /grant "SYSTEM:F" | Out-Null
+          icacls $authKeys /inheritance:r | Out-Null
+          icacls $authKeys /grant "${env:USERNAME}:F" /grant "SYSTEM:F" | Out-Null
+
+          # 2) Administrators authorized_keys - REQUIRED for admin users on Windows OpenSSH
+          # runneradmin is an administrator, so sshd reads C:\ProgramData\ssh\administrators_authorized_keys
+          $adminKeys = "C:\ProgramData\ssh\administrators_authorized_keys"
+          New-Item -ItemType Directory -Force -Path "C:\ProgramData\ssh" | Out-Null
+          $Keys | Out-File -FilePath $adminKeys -Encoding utf8 -Append
+          Write-Host "Added to $adminKeys"
+
+          # Fix ACLs for administrators_authorized_keys (only SYSTEM + Administrators)
+          icacls $adminKeys /inheritance:r | Out-Null
+          icacls $adminKeys /grant "SYSTEM:F" /grant "Administrators:F" | Out-Null
+
+          Write-Host ""
+          Write-Host "Keys:"
+          Write-Host $Keys
+          icacls $authKeys
+          icacls $adminKeys
 
       # ------------------------------------------------------------
       # Install Upterm
       # ------------------------------------------------------------
 
       - name: Install Upterm
-        if: ${{ inputs.install_upterm && runner.os != 'Windows' }}
+        if: ${{ inputs.install_upterm }}
         shell: bash
         run: |
           set -e
@@ -300,6 +343,9 @@ jobs:
               ;;
             macOS)
               OS="darwin"
+              ;;
+            Windows)
+              OS="windows"
               ;;
             *)
               echo "Unsupported OS"
@@ -345,10 +391,20 @@ jobs:
 
           tar -xzf upterm.tar.gz
 
-          sudo install upterm /usr/local/bin/upterm
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            mkdir -p "$HOME/.local/bin"
+            cp upterm.exe "$HOME/.local/bin/upterm.exe"
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          else
+            sudo install upterm /usr/local/bin/upterm
+          fi
 
           echo
-          upterm version
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            "$HOME/.local/bin/upterm.exe" version
+          else
+            upterm version
+          fi
 
       # ------------------------------------------------------------
       # Generate Upterm key
