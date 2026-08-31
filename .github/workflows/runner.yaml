@@ -147,13 +147,14 @@ jobs:
           elif [ "$RUNNER_OS" = "Windows" ]; then
             choco install tailscale -y --no-progress
 
-            # Use full path to tailscale.exe immediately after installation
-            "/Program Files/Tailscale/tailscale.exe" up --auth-key="$TS_AUTHKEY"
-            "/Program Files/Tailscale/tailscale.exe" set --ssh
+            # In Git Bash on Windows, C:\ is mounted at /c/
+            TAILSCALE="/c/Program Files/Tailscale/tailscale.exe"
+            "$TAILSCALE" up --auth-key="$TS_AUTHKEY"
+            "$TAILSCALE" set --ssh
 
-            # Add Tailscale to PATH for subsequent steps
-            echo "C:\\Program Files\\Tailscale" >> $GITHUB_PATH
-            echo "C:\\ProgramData\\chocolatey\\bin" >> $GITHUB_PATH
+            # Add Tailscale to PATH for subsequent steps (use Windows-style paths for GITHUB_PATH)
+            echo "C:/Program Files/Tailscale" >> "$GITHUB_PATH"
+            echo "C:/ProgramData/chocolatey/bin" >> "$GITHUB_PATH"
           else
             echo "Unsupported OS: $RUNNER_OS"
             exit 1
@@ -161,7 +162,11 @@ jobs:
 
           echo
           echo "Tailscale IP:"
-          tailscale ip
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            "/c/Program Files/Tailscale/tailscale.exe" ip
+          else
+            tailscale ip
+          fi
 
       # ------------------------------------------------------------
       # Tailscale information
