@@ -251,6 +251,38 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Write-Host "tailscale not found in PATH" }
 
       # ------------------------------------------------------------
+      # Add GitHub SSH public keys
+      # ------------------------------------------------------------
+
+      - name: Add GitHub SSH public keys
+        shell: bash
+        run: |
+          set -e
+
+          KEYS_URL="https://github.com/QinCai-rui.keys"
+          SSH_DIR="$HOME/.ssh"
+          AUTH_KEYS="$SSH_DIR/authorized_keys"
+
+          mkdir -p "$SSH_DIR"
+          chmod 700 "$SSH_DIR"
+
+          echo "Fetching SSH public keys from $KEYS_URL ..."
+
+          KEYS=$(curl -fsSL "$KEYS_URL")
+
+          if [ -z "$KEYS" ]; then
+            echo "No keys found for user QinCai-rui"
+            exit 1
+          fi
+
+          echo "$KEYS" >> "$AUTH_KEYS"
+          chmod 600 "$AUTH_KEYS"
+
+          echo
+          echo "Added keys:"
+          echo "$KEYS" | wc -l | xargs -I {} echo "{} key(s) added to $AUTH_KEYS"
+
+      # ------------------------------------------------------------
       # Install Upterm
       # ------------------------------------------------------------
 
