@@ -385,25 +385,47 @@ jobs:
             exit 1
           fi
 
-          echo "Downloading: $URL"
-
+          echo "Downloading upterm: $URL"
           curl -fL "$URL" -o upterm.tar.gz
-
           tar -xzf upterm.tar.gz
+
+          # Also download uptermd (daemon) — separate package on Linux
+          if [ "$OS" = "linux" ]; then
+            UPTERMD_URL="$(
+              curl -fsSL \
+                https://api.github.com/repos/owenthereal/upterm/releases/latest |
+              jq -r \
+                --arg pattern "uptermd_${OS}_${ARCH}.tar.gz" \
+                '.assets[] | select(.name == $pattern) | .browser_download_url'
+            )"
+            if [ -n "$UPTERMD_URL" ] && [ "$UPTERMD_URL" != "null" ]; then
+              echo "Downloading uptermd: $UPTERMD_URL"
+              curl -fL "$UPTERMD_URL" -o uptermd.tar.gz
+              tar -xzf uptermd.tar.gz
+            fi
+          fi
+
+          echo
+          echo "Installing..."
 
           if [ "$RUNNER_OS" = "Windows" ]; then
             mkdir -p "$HOME/.local/bin"
             cp upterm.exe "$HOME/.local/bin/upterm.exe"
+            cp uptermd.exe "$HOME/.local/bin/uptermd.exe" 2>/dev/null || true
             echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           else
             sudo install upterm /usr/local/bin/upterm
+            [ -f uptermd ] && sudo install uptermd /usr/local/bin/uptermd
           fi
 
           echo
+          echo "Versions:"
           if [ "$RUNNER_OS" = "Windows" ]; then
             "$HOME/.local/bin/upterm.exe" version
+            "$HOME/.local/bin/uptermd.exe" version 2>/dev/null || true
           else
             upterm version
+            uptermd version 2>/dev/null || true
           fi
 
       # ------------------------------------------------------------
@@ -423,6 +445,30 @@ jobs:
           echo
           echo "Upterm public key:"
           cat ~/.upterm/id_ed25519.pub
+
+      # ------------------------------------------------------------
+      # Start Upterm daemon
+      # ------------------------------------------------------------
+
+      - name: Start Upterm daemon
+        if: ${{ inputs.install_upterm }}
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            "$HOME/.local/bin/upterm.exe" host \
+              --server wss://upterm.qincai.xyz \
+              --private-key ~/.upterm/id_ed25519 \
+              --accept \
+              --github-user QinCai-rui \
+              --skip-host-key-check &
+          else
+            upterm host \
+              --server wss://upterm.qincai.xyz \
+              --private-key ~/.upterm/id_ed25519 \
+              --accept \
+              --github-user QinCai-rui \
+              --skip-host-key-check &
+          fi
 
       # ------------------------------------------------------------
       # Detailed diagnostics
