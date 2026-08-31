@@ -147,8 +147,10 @@ jobs:
           elif [ "$RUNNER_OS" = "Windows" ]; then
             choco install tailscale -y --no-progress
 
-            # Start a fresh Git Bash with Chocolatey's updated PATH.
-            exec cmd.exe /c "refreshenv && C:\Program Files\Git\bin\bash.exe -lc \"tailscale version && tailscale up --auth-key=\\\"$TS_AUTHKEY\\\" && tailscale set --ssh && echo && echo 'Tailscale IP:' && tailscale ip\""
+            # Add Tailscale to PATH and authenticate
+            export PATH="$PATH:/ProgramData/chocolatey/bin:/Program Files/Tailscale"
+            tailscale up --auth-key="$TS_AUTHKEY"
+            tailscale set --ssh
           else
             echo "Unsupported OS: $RUNNER_OS"
             exit 1
@@ -235,12 +237,13 @@ jobs:
           Set-Service -Name sshd -StartupType Automatic
 
           Write-Host ""
-          Write-Host "Tailscale IP:"
-          tailscale ip
-
-          Write-Host ""
           Write-Host "Current user:"
           whoami
+
+          Write-Host ""
+          Write-Host "Tailscale IP (if available):"
+          tailscale ip 2> $null
+          if ($LASTEXITCODE -ne 0) { Write-Host "tailscale not found in PATH" }
 
       # ------------------------------------------------------------
       # Install Upterm
