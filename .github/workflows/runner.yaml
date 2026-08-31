@@ -147,10 +147,12 @@ jobs:
           elif [ "$RUNNER_OS" = "Windows" ]; then
             choco install tailscale -y --no-progress
 
-            # Add Tailscale to PATH and authenticate
-            export PATH="$PATH:/ProgramData/chocolatey/bin:/Program Files/Tailscale"
-            tailscale up --auth-key="$TS_AUTHKEY"
-            tailscale set --ssh
+            # Refresh environment and authenticate in a single PowerShell session
+            powershell -Command "refreshenv; tailscale up --auth-key $env:TS_AUTHKEY; tailscale set --ssh"
+
+            # Add Tailscale to PATH for subsequent steps
+            echo "$env:ProgramFiles\Tailscale" >> $GITHUB_PATH
+            echo "$env:ProgramData\chocolatey\bin" >> $GITHUB_PATH
           else
             echo "Unsupported OS: $RUNNER_OS"
             exit 1
