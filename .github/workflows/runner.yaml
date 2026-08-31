@@ -150,7 +150,6 @@ jobs:
             # In Git Bash on Windows, C:\ is mounted at /c/
             TAILSCALE="/c/Program Files/Tailscale/tailscale.exe"
             "$TAILSCALE" up --auth-key="$TS_AUTHKEY"
-            "$TAILSCALE" set --ssh
 
             # Add Tailscale to PATH for subsequent steps (use Windows-style paths for GITHUB_PATH)
             echo "C:/Program Files/Tailscale" >> "$GITHUB_PATH"
